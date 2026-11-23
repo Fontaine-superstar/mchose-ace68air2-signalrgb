@@ -25,9 +25,8 @@
 //
 // LED slot map verified against a physical unit (probed LED by LED):
 //   slots 0..70 = per-key LEDs; the Space bar has 5 LEDs: 20(L2) 17(L1) 70(C) 24(R1) 35(R2);
-//   the "[" key LED is slot 40 (the vendor table claims 61, which has no LED on this unit);
 //   76 = RT side key, 77..127 = Air light box (top bar);
-//   slots 46, 58, 61, 71 have no LED populated (kept dark).
+//   slots 40, 46, 58, 71 have no LED populated (kept dark; 61 = "[" as in the vendor table).
 
 export function Name() { return "MCHOSE Ace 68 Air 2"; }
 export function VendorId() { return 0x3837; }
@@ -73,7 +72,7 @@ const vKeyUnits = [
 	[25, "=", 12.5, 0], [7, "Backspace", 14.0, 0], [53, "Insert", 15.5, 0],
 
 	[54, "Tab", 0.75, 1], [2, "Q", 2.0, 1], [74, "W", 3.0, 1], [6, "E", 4.0, 1], [42, "R", 5.0, 1], [8, "T", 6.0, 1],
-	[1, "Y", 7.0, 1], [39, "U", 8.0, 1], [3, "I", 9.0, 1], [23, "O", 10.0, 1], [41, "P", 11.0, 1], [40, "[", 12.0, 1],
+	[1, "Y", 7.0, 1], [39, "U", 8.0, 1], [3, "I", 9.0, 1], [23, "O", 10.0, 1], [41, "P", 11.0, 1], [61, "[", 12.0, 1],
 	[43, "]", 13.0, 1], [27, "\\", 14.25, 1], [63, "Del", 15.5, 1],
 
 	[36, "Caps Lock", 0.875, 2], [72, "A", 2.25, 2], [73, "S", 3.25, 2], [75, "D", 4.25, 2], [44, "F", 5.25, 2],
