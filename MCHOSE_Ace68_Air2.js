@@ -23,10 +23,11 @@
 // the frame-rate throttle; reliability comes from the periodic full refresh (every 2 s).
 // The vendor's own music mode also fires 0xDD without per-block ACK waiting.
 //
-// LED slot map taken from the vendor web driver config (authoritative, no probing needed):
-//   cdn.mchose.com.cn/customPage/prod/cizhou/CZ_SHARED_DATA/default-keys-ace68_air_2.*.js
-//   slots 0..70 = per-key LEDs, 76 = RT side key, 77..127 = Air light box (top bar),
-//   slots 17,20,24,35,40,46,58,71 = reserved (no key, kept dark).
+// LED slot map verified against a physical unit (probed LED by LED):
+//   slots 0..70 = per-key LEDs; the Space bar has 5 LEDs: 20(L2) 17(L1) 70(C) 24(R1) 35(R2);
+//   the "[" key LED is slot 40 (the vendor table claims 61, which has no LED on this unit);
+//   76 = RT side key, 77..127 = Air light box (top bar);
+//   slots 46, 58, 61, 71 have no LED populated (kept dark).
 
 export function Name() { return "MCHOSE Ace 68 Air 2"; }
 export function VendorId() { return 0x3837; }
@@ -72,7 +73,7 @@ const vKeyUnits = [
 	[25, "=", 12.5, 0], [7, "Backspace", 14.0, 0], [53, "Insert", 15.5, 0],
 
 	[54, "Tab", 0.75, 1], [2, "Q", 2.0, 1], [74, "W", 3.0, 1], [6, "E", 4.0, 1], [42, "R", 5.0, 1], [8, "T", 6.0, 1],
-	[1, "Y", 7.0, 1], [39, "U", 8.0, 1], [3, "I", 9.0, 1], [23, "O", 10.0, 1], [41, "P", 11.0, 1], [61, "[", 12.0, 1],
+	[1, "Y", 7.0, 1], [39, "U", 8.0, 1], [3, "I", 9.0, 1], [23, "O", 10.0, 1], [41, "P", 11.0, 1], [40, "[", 12.0, 1],
 	[43, "]", 13.0, 1], [27, "\\", 14.25, 1], [63, "Del", 15.5, 1],
 
 	[36, "Caps Lock", 0.875, 2], [72, "A", 2.25, 2], [73, "S", 3.25, 2], [75, "D", 4.25, 2], [44, "F", 5.25, 2],
@@ -88,6 +89,9 @@ const vKeyUnits = [
 	[69, "Down Arrow", 14.5, 4], [15, "Right Arrow", 15.5, 4],
 
 	[76, "RT", 0.5, 2], // side Rapid-Trigger button, drawn at the left edge below Tab
+
+	// Space bar satellite LEDs (physically verified on the Ace 68 Air 2).
+	[20, "Space L2", 3.375, 4.6], [17, "Space L1", 5.125, 4.6], [24, "Space R1", 8.625, 4.6], [35, "Space R2", 10.375, 4.6],
 ];
 
 // Convert the key center (key units) to a grid cell (0.25 u per cell), clamped to the grid.
@@ -127,6 +131,7 @@ export function Initialize() {
 	lastSendTime = 0;
 	lastLogTime = 0;
 	lastFullRefresh = 0;
+	lastWriteAt = 0;
 	sentFrames = 0;
 	sentWindowStart = Date.now();
 	device.log("Mchose Ace 68 Air 2 initialized (music channel 0xDD, profile " + profileSlot + ")");
@@ -187,6 +192,7 @@ let frameCount = 0;
 let lastSendTime = 0;     // ms timestamp of the last frame actually sent (frame-rate throttle)
 let lastLogTime = 0;      // ms timestamp of the last status log
 let lastFullRefresh = 0;  // ms timestamp of the last forced full refresh
+let lastWriteAt = 0;      // ms timestamp of the last block actually written (keep-alive source)
 let sentFrames = 0;       // frames sent since the last status log
 let sentWindowStart = 0;  // ms timestamp for the effective-FPS calculation
 
@@ -216,6 +222,15 @@ function sendFrame(colors, cmd) {
 		buf[i * 3 + 2] = boxColor[2];
 	}
 
+	// The keyboard reverts to its onboard lighting when the realtime (0xDD) channel goes idle:
+	// a paused video or a black screen produces no changed blocks, the bus falls silent and the
+	// stock effect (with its blue keys) bleeds through. So keep the channel alive by resending
+	// the full frame whenever no block was written for 400 ms.
+	const now2 = Date.now();
+	const keepAlive = (now2 - lastWriteAt) > 400;
+	const refresh = forceFull || keepAlive || (now2 - lastFullRefresh >= 2000);
+	let wroteAny = false;
+
 	for (const off of BLOCK_OFFSETS) {
 		const addr = profileBase + off; // address inside the active profile's lighting area
 		const pkt = new Array(64).fill(0);
@@ -232,17 +247,18 @@ function sendFrame(colors, cmd) {
 		for (let i = 4; i < 64; i++) { sum += pkt[i]; }
 		pkt[3] = sum & 0xFF;
 
-		// Only resend blocks that changed (less traffic = fewer dropped blocks), plus a full
-		// refresh about every 2 seconds to repair any block the keyboard may have missed.
+		// Only resend blocks that changed (less traffic = fewer dropped blocks); full refreshes
+		// repair any block the keyboard may have missed and keep the realtime channel alive.
 		const sig = pkt.slice(8).join(",");
-		const refresh = forceFull || (Date.now() - lastFullRefresh >= 2000);
-		if (refresh) { lastFullRefresh = Date.now(); }
 		if (!refresh && lastBlocks[addr] === sig) { continue; }
 
 		// Leading 0x00 = report ID 0, total length 65 (the endpoint has no report ID).
 		device.write([0x00].concat(pkt), 65);
 		lastBlocks[addr] = sig;
+		wroteAny = true;
 	}
+	if (wroteAny) { lastWriteAt = now2; }
+	if (refresh) { lastFullRefresh = now2; }
 	forceFull = false;
 }
 
